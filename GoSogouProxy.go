@@ -1,0 +1,149 @@
+// encoding: utf-8
+/*
+ * Copyright (C) 2014 Liú Hǎiyáng
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
+// Sogou Proxy for CERNET
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"log"
+	"math/rand"
+	"net"
+	"net/http"
+	"time"
+)
+
+func main() {
+	log.Println("GoSogouProxy, Copyright (C) 2014 Liu Haiyang")
+	log.Println("This software is released under The MIT License.")
+	http.ListenAndServe("127.0.0.1:8008", SogouProxyHandler{})
+}
+
+type SogouProxyHandler struct{}
+
+func (proxy SogouProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	proxyNum := rand.Intn(8)
+	proxyHost := fmt.Sprintf("h%d.edu.bj.ie.sogou.com:80", proxyNum)
+	proxyConn, err := net.Dial("tcp", proxyHost)
+	if err != nil {
+		log.Printf("ERROR[dial h%d]: %s, %d\n", proxyNum, err.Error(), http.StatusBadGateway)
+		http.Error(writer, err.Error(), http.StatusBadGateway)
+		return
+	} else {
+		log.Printf("dial h%d: ok\n", proxyNum)
+	}
+
+	timestamp := fmt.Sprintf("%08x", time.Now().Unix())
+	request.Header.Add("X-Sogou-Timestamp", timestamp)
+	tag := fmt.Sprintf("%08x", sogouTagHash(timestamp+request.Host+"SogouExplorerProxy"))
+	request.Header.Add("X-Sogou-Tag", tag)
+	request.Header.Add("X-Sogou-Auth", "58C41A7C258CAB58167E110BB5DEF7AF/4.1.3.8107/md5")
+
+	request.WriteProxy(proxyConn)
+
+	hj, ok := writer.(http.Hijacker)
+	if !ok {
+		log.Println("ERROR: ", "webserver doesn't support hijacking", http.StatusInternalServerError)
+		http.Error(writer, "webserver doesn't support hijacking", http.StatusInternalServerError)
+		return
+	}
+	clientConn, _, err := hj.Hijack()
+	if err != nil {
+		log.Println("ERROR: ", err.Error(), http.StatusInternalServerError)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	proxyBufReader := bufio.NewReader(proxyConn)
+	response, err := http.ReadResponse(proxyBufReader, request)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if request.Method == "CONNECT" {
+		response.Body.Close()
+	} else {
+		defer response.Body.Close()
+	}
+
+	log.Printf("%s %s %s\n<- %s\n", request.RemoteAddr, request.Method, request.RequestURI, response.Status)
+	response.Write(clientConn)
+
+	if request.Method == "CONNECT" && response.StatusCode == http.StatusOK {
+		go copyAndClose(proxyConn, clientConn)
+		go copyAndClose(clientConn, proxyBufReader)
+	} else {
+		clientConn.Close()
+		proxyConn.Close()
+	}
+}
+
+func copyAndClose(w io.WriteCloser, r io.Reader) {
+	io.Copy(w, r)
+	if err := w.Close(); err != nil {
+		log.Println("Error closing", err)
+	}
+}
+
+// SougouExplorer 4.1.3.8107
+// SENetLayer.dll .text:35664A95
+func sogouTagHash(s string) uint32 {
+	n := len(s)
+	if n == 0 {
+		return 0
+	}
+	hash := uint32(n)
+	i := 0
+	for ndword := n / 4; ndword > 0; ndword-- {
+		loword := uint32(s[i+1])<<8 | uint32(s[i])
+		hiword := uint32(s[i+3])<<8 | uint32(s[i+2])
+		hash += loword
+		hash ^= (hiword ^ hash<<5) << 11
+		hash += hash >> 11
+		i += 4
+	}
+	switch n % 4 {
+	case 1:
+		hash += uint32(s[i])
+		hash ^= hash << 10
+		hash += hash >> 1
+	case 2:
+		hash += uint32(s[i+1])<<8 | uint32(s[i])
+		hash ^= hash << 11
+		hash += hash >> 17
+	case 3:
+		hash += uint32(s[i+1])<<8 | uint32(s[i])
+		hash ^= (hash ^ uint32(s[i+2])<<2) << 16
+		hash += hash >> 11
+	}
+	hash ^= hash << 3
+	hash += hash >> 5
+	hash ^= hash << 4
+	hash += hash >> 17
+	hash ^= hash << 25
+	hash += hash >> 6
+	return hash
+}
+
