@@ -26,6 +26,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -37,18 +38,25 @@ import (
 )
 
 func main() {
+	var serverPort uint
+	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
+
+	flag.Parse()
+
 	log.Println("GoSogouProxy, Copyright (C) 2014 Liu Haiyang")
 	log.Println("This software is released under The MIT License.")
 
 	handler := &SogouProxyHandler{
 		hostTemplate:      "h%d.edu.bj.ie.sogou.com:80",
 		hostMax:           16,
-		timeOut:           100 * time.Millisecond,
+		timeOut:           200 * time.Millisecond,
 		getRequestChan:    make(chan chan int),
 		disableReqestChan: make(chan int),
 	}
 	go hostlistDaemon(handler)
-	http.ListenAndServe("127.0.0.1:8008", handler)
+	serverAddr := fmt.Sprintf("127.0.0.1:%d", serverPort)
+	log.Printf("Start serving on %s\n", serverAddr)
+	http.ListenAndServe(serverAddr, handler)
 }
 
 type SogouProxyHandler struct {
@@ -163,10 +171,10 @@ func refreshHostlist(handler *SogouProxyHandler) []int {
 		if err != nil {
 			log.Printf("Host %d unavailable: %s\n", i, err)
 		} else {
+			log.Printf("Host %d OK (%s).\n", i, conn.RemoteAddr())
 			conn.Close()
 			healthy = true
 			hostlist = append(hostlist, i)
-			log.Printf("Host %d OK.\n", i)
 		}
 	}
 	log.Println("Available proxy host list is updated.")
