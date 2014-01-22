@@ -32,28 +32,35 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"sort"
 	"time"
 )
 
 func main() {
 	log.Println("GoSogouProxy, Copyright (C) 2014 Liu Haiyang")
 	log.Println("This software is released under The MIT License.")
-	http.ListenAndServe("127.0.0.1:8008", SogouProxyHandler{})
+
+	handler := &SogouProxyHandler{
+		hostTemplate:      "h%d.edu.bj.ie.sogou.com:80",
+		hostMax:           16,
+		timeOut:           100 * time.Millisecond,
+		getRequestChan:    make(chan chan int),
+		disableReqestChan: make(chan int),
+	}
+	go hostlistDaemon(handler)
+	http.ListenAndServe("127.0.0.1:8008", handler)
 }
 
-type SogouProxyHandler struct{}
+type SogouProxyHandler struct {
+	hostTemplate      string
+	hostMax           int
+	timeOut           time.Duration
+	getRequestChan    chan chan int
+	disableReqestChan chan int
+}
 
-func (proxy SogouProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	proxyNum := rand.Intn(8)
-	proxyHost := fmt.Sprintf("h%d.edu.bj.ie.sogou.com:80", proxyNum)
-	proxyConn, err := net.Dial("tcp", proxyHost)
-	if err != nil {
-		log.Printf("ERROR[dial h%d]: %s, %d\n", proxyNum, err.Error(), http.StatusBadGateway)
-		http.Error(writer, err.Error(), http.StatusBadGateway)
-		return
-	} else {
-		log.Printf("dial h%d: ok\n", proxyNum)
-	}
+func (handler *SogouProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	proxyConn := mustDialSogou(handler)
 
 	timestamp := fmt.Sprintf("%08x", time.Now().Unix())
 	request.Header.Add("X-Sogou-Timestamp", timestamp)
@@ -98,6 +105,76 @@ func (proxy SogouProxyHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 		clientConn.Close()
 		proxyConn.Close()
 	}
+}
+
+func mustDialSogou(handler *SogouProxyHandler) net.Conn {
+	for {
+		req := make(chan int)
+		handler.getRequestChan <- req
+		proxyNum := <-req
+		proxyHost := fmt.Sprintf(handler.hostTemplate, proxyNum)
+		proxyConn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
+		if err == nil {
+			log.Printf("Dial to h%d: ok\n", proxyNum)
+			return proxyConn
+		} else {
+			log.Printf("Dial to h%d: failed. %s\n", proxyNum, err.Error())
+			handler.disableReqestChan <- proxyNum
+		}
+	}
+}
+
+func hostlistDaemon(handler *SogouProxyHandler) {
+	hostlist := refreshHostlist(handler)
+	ticker := time.NewTicker(24 * time.Hour)
+	for {
+		select {
+		case getreq := <-handler.getRequestChan:
+			if len(hostlist) > 0 {
+				i := rand.Intn(len(hostlist))
+				getreq <- hostlist[i]
+			}
+		case delreq := <-handler.disableReqestChan:
+			if len(hostlist) > 0 {
+				i := sort.SearchInts(hostlist, delreq)
+				if i == len(hostlist) {
+					panic("Wrong disable request.")
+				}
+				hostlist = append(hostlist[:i], hostlist[i+1:]...)
+			} else {
+				// No proxy host avaiable any more
+				hostlist = refreshHostlist(handler)
+			}
+		case <-ticker.C:
+			// STOP THE WORLD!!
+			hostlist = refreshHostlist(handler)
+		}
+	}
+}
+
+func refreshHostlist(handler *SogouProxyHandler) []int {
+	log.Println("Updating available proxy host list...")
+	log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
+	healthy := false
+	hostlist := make([]int, 0, handler.hostMax)
+	for i := 0; i < handler.hostMax; i++ {
+		proxyHost := fmt.Sprintf(handler.hostTemplate, i)
+		conn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
+		if err != nil {
+			log.Printf("Host %d unavailable: %s\n", i, err)
+		} else {
+			conn.Close()
+			healthy = true
+			hostlist = append(hostlist, i)
+			log.Printf("Host %d OK.\n", i)
+		}
+	}
+	log.Println("Available proxy host list is updated.")
+	// Not even one proxy host avaiable
+	if !healthy {
+		log.Fatalln("All hosts are unavailable. Exit.")
+	}
+	return hostlist
 }
 
 func copyAndClose(w io.WriteCloser, r io.Reader) {
@@ -146,4 +223,3 @@ func sogouTagHash(s string) uint32 {
 	hash += hash >> 6
 	return hash
 }
-
