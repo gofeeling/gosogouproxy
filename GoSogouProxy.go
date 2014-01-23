@@ -156,6 +156,7 @@ func mustDialSogou(handler *SogouProxyHandler) net.Conn {
 func hostlistDaemon(handler *SogouProxyHandler) {
 	hostlist := refreshHostlist(handler)
 	ticker := time.NewTicker(24 * time.Hour)
+	freshChan := make(chan []int)
 	for {
 		select {
 		case getreq := <-handler.getRequestChan:
@@ -171,12 +172,15 @@ func hostlistDaemon(handler *SogouProxyHandler) {
 				}
 				hostlist = append(hostlist[:i], hostlist[i+1:]...)
 			} else {
-				// No proxy host avaiable any more
+				// Stop and refresh
 				hostlist = refreshHostlist(handler)
 			}
 		case <-ticker.C:
-			// STOP THE WORLD!!
-			hostlist = refreshHostlist(handler)
+			// While updating, we don't stop the world.
+			go func() { freshChan <- refreshHostlist(handler) }()
+		case newlist := <-freshChan:
+			// Update
+			hostlist = newlist
 		}
 	}
 }
