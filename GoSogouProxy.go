@@ -38,7 +38,8 @@ import (
 	"time"
 )
 
-var Version string = "(unspecified)"
+// Build with option: -ldflags "-X main.Revision ?"
+var Revision string = "???"
 
 func main() {
 	var serverPort uint
@@ -53,7 +54,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Printf("GoSogouProxy ver. %s, Copyright (C) 2014 Liu Haiyang\n", Version)
+	log.Printf("GoSogouProxy (rev. %s), Copyright (C) 2014 Liu Haiyang\n", Revision)
 	log.Println("This software is released under The MIT License.")
 
 	handler := &SogouProxyHandler{
