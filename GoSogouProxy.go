@@ -21,7 +21,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-// Sogou Proxy for CERNET
+// Sogou Proxy
 package main
 
 import (
@@ -33,22 +33,31 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"time"
 )
 
+var Version string = "(unspecified)"
+
 func main() {
 	var serverPort uint
 	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
+	var proxyTypeStr string
+	flag.StringVar(&proxyTypeStr, "t", "edu", "Select type of proxy: edu, dxt, cnc, ctc")
 
 	flag.Parse()
 
-	log.Println("GoSogouProxy, Copyright (C) 2014 Liu Haiyang")
+	if _, ok := proxyTypeMap[proxyTypeStr]; !ok {
+		fmt.Fprintf(os.Stderr, "Unknown proxy type '%s'.\n", proxyTypeStr)
+		os.Exit(0)
+	}
+
+	log.Printf("GoSogouProxy ver. %s, Copyright (C) 2014 Liu Haiyang\n", Version)
 	log.Println("This software is released under The MIT License.")
 
 	handler := &SogouProxyHandler{
-		hostTemplate:      "h%d.edu.bj.ie.sogou.com:80",
-		hostMax:           16,
+		ProxyType:         proxyTypeMap[proxyTypeStr],
 		timeOut:           200 * time.Millisecond,
 		getRequestChan:    make(chan chan int),
 		disableReqestChan: make(chan int),
@@ -59,9 +68,20 @@ func main() {
 	http.ListenAndServe(serverAddr, handler)
 }
 
+type ProxyType struct {
+	hostTemplate string
+	hostMax      int
+}
+
+var proxyTypeMap = map[string]ProxyType{
+	"edu": {hostTemplate: "h%d.edu.bj.ie.sogou.com:80", hostMax: 16},
+	"dxt": {hostTemplate: "h%d.dxt.bj.ie.sogou.com:80", hostMax: 16},
+	"cnc": {hostTemplate: "h%d.cnc.bj.ie.sogou.com:80", hostMax: 4},
+	"ctc": {hostTemplate: "h%d.ctc.bj.ie.sogou.com:80", hostMax: 4},
+}
+
 type SogouProxyHandler struct {
-	hostTemplate      string
-	hostMax           int
+	ProxyType
 	timeOut           time.Duration
 	getRequestChan    chan chan int
 	disableReqestChan chan int
