@@ -59,7 +59,7 @@ func main() {
 
 	handler := &SogouProxyHandler{
 		ProxyType:         proxyTypeMap[proxyTypeStr],
-		timeOut:           200 * time.Millisecond,
+		timeOut:           500 * time.Millisecond,
 		getRequestChan:    make(chan chan int),
 		disableReqestChan: make(chan int),
 	}
@@ -155,7 +155,7 @@ func mustDialSogou(handler *SogouProxyHandler) net.Conn {
 
 func hostlistDaemon(handler *SogouProxyHandler) {
 	hostlist := refreshHostlist(handler)
-	ticker := time.NewTicker(24 * time.Hour)
+	ticker := time.NewTicker(10 * time.Minute)
 	freshChan := make(chan []int)
 	for {
 		select {
@@ -188,24 +188,32 @@ func hostlistDaemon(handler *SogouProxyHandler) {
 func refreshHostlist(handler *SogouProxyHandler) []int {
 	log.Println("Updating available proxy host list...")
 	log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
-	healthy := false
 	hostlist := make([]int, 0, handler.hostMax)
+	hostchan := make(chan int)
 	for i := 0; i < handler.hostMax; i++ {
-		proxyHost := fmt.Sprintf(handler.hostTemplate, i)
-		conn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
-		if err != nil {
-			log.Printf("Host %d unavailable: %s\n", i, err)
-		} else {
-			log.Printf("Host %d OK (%s).\n", i, conn.RemoteAddr())
-			conn.Close()
-			healthy = true
-			hostlist = append(hostlist, i)
+		go func(ihost int) {
+			proxyHost := fmt.Sprintf(handler.hostTemplate, ihost)
+			conn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
+			if err != nil {
+				log.Printf("Host %d unavailable: %s\n", ihost, err)
+				hostchan <- -1
+			} else {
+				log.Printf("Host %d OK (%s).\n", ihost, conn.RemoteAddr())
+				conn.Close()
+				hostchan <- ihost
+			}
+		}(i)
+	}
+	for i := 0; i < handler.hostMax; i++ {
+		if ihost := <-hostchan; ihost >= 0 {
+			hostlist = append(hostlist, ihost)
 		}
 	}
-	log.Println("Available proxy host list is updated.")
 	// Not even one proxy host avaiable
-	if !healthy {
-		log.Fatalln("All hosts are unavailable. Exit.")
+	if len(hostlist) > 0 {
+		log.Println("Available proxy host list is updated.")
+	} else {
+		log.Fatalln("All hosts are unavailable.")
 	}
 	return hostlist
 }
