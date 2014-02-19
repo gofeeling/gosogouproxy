@@ -40,23 +40,18 @@ import (
 
 // Build with option: -ldflags "-X main.Revision ?"
 var Revision string = "???"
-var Log string = ""
 
 func main() {
-	if Log != "" {
-		logfile, err := os.Create(Log)
-		if err == nil {
-			defer logfile.Close()
-			log.SetOutput(io.MultiWriter(logfile, os.Stderr))
-		}
-	}
-
+	var logEnabled bool
+	flag.BoolVar(&logEnabled, "l", false, "Set log file name.")
 	var serverPort uint
 	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
 	var proxyTypeStr string
 	flag.StringVar(&proxyTypeStr, "t", "edu", "Select type of proxy: edu, dxt, cnc, ctc")
 
 	flag.Parse()
+
+	setLog(logEnabled)
 
 	if _, ok := proxyTypeMap[proxyTypeStr]; !ok {
 		fmt.Fprintf(os.Stderr, "Unknown proxy type '%s'.\n", proxyTypeStr)
@@ -76,6 +71,16 @@ func main() {
 	serverAddr := fmt.Sprintf("127.0.0.1:%d", serverPort)
 	log.Printf("Start serving on %s\n", serverAddr)
 	http.ListenAndServe(serverAddr, handler)
+}
+
+func setLog(logEnabled bool) {
+	if !logEnabled {
+		return
+	}
+	logfile, err := os.Create("gosogouproxy.log")
+	if err == nil {
+		log.SetOutput(io.MultiWriter(logfile, os.Stderr))
+	}
 }
 
 type ProxyType struct {
