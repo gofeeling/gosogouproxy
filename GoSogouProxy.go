@@ -40,8 +40,17 @@ import (
 
 // Build with option: -ldflags "-X main.Revision ?"
 var Revision string = "???"
+var Log string = ""
 
 func main() {
+	if Log != "" {
+		logfile, err := os.Create(Log)
+		if err == nil {
+			defer logfile.Close()
+			log.SetOutput(io.MultiWriter(logfile, os.Stderr))
+		}
+	}
+
 	var serverPort uint
 	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
 	var proxyTypeStr string
@@ -167,7 +176,8 @@ func hostlistDaemon(handler *SogouProxyHandler) {
 		case delreq := <-handler.disableReqestChan:
 			if len(hostlist) > 0 {
 				i := sort.SearchInts(hostlist, delreq)
-				if i == len(hostlist) {
+				// TODO: 删除会有时效问题，前面删除一次以后其他编码失效，需要修改数据结构解决
+				if i >= len(hostlist) {
 					panic("Wrong disable request.")
 				}
 				hostlist = append(hostlist[:i], hostlist[i+1:]...)
