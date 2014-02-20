@@ -34,16 +34,21 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
 	"time"
 )
 
 // Build with option: -ldflags "-X main.Revision ?"
 var Revision string = "???"
 
+const (
+	defalutTimeOut  = 200 * time.Millisecond // Connection timeout
+	refreshDuration = 30 * time.Minute       // Regular refresh
+	waitDuration    = 10 * time.Second       // Force refresh
+)
+
 func main() {
 	var logEnabled bool
-	flag.BoolVar(&logEnabled, "l", false, "Set log file name.")
+	flag.BoolVar(&logEnabled, "l", false, "Enable log file.")
 	var serverPort uint
 	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
 	var proxyTypeStr string
@@ -63,7 +68,7 @@ func main() {
 
 	handler := &SogouProxyHandler{
 		ProxyType:         proxyTypeMap[proxyTypeStr],
-		timeOut:           500 * time.Millisecond,
+		timeOut:           defalutTimeOut,
 		getRequestChan:    make(chan chan int),
 		disableReqestChan: make(chan int),
 	}
@@ -168,8 +173,9 @@ func mustDialSogou(handler *SogouProxyHandler) net.Conn {
 }
 
 func hostlistDaemon(handler *SogouProxyHandler) {
-	hostlist := refreshHostlist(handler)
-	ticker := time.NewTicker(10 * time.Minute)
+	isHostValid := make([]bool, handler.hostMax)
+	hostlist := refreshHostlist(handler, isHostValid)
+	ticker := time.NewTicker(refreshDuration)
 	freshChan := make(chan []int)
 	for {
 		select {
@@ -177,60 +183,73 @@ func hostlistDaemon(handler *SogouProxyHandler) {
 			if len(hostlist) > 0 {
 				i := rand.Intn(len(hostlist))
 				getreq <- hostlist[i]
+			} else {
+				// Stop and refresh
+				hostlist = refreshHostlist(handler, isHostValid)
 			}
 		case delreq := <-handler.disableReqestChan:
 			if len(hostlist) > 0 {
-				i := sort.SearchInts(hostlist, delreq)
-				// TODO: 删除会有时效问题，前面删除一次以后其他编码失效，需要修改数据结构解决
-				if i >= len(hostlist) {
-					panic("Wrong disable request.")
-				}
-				hostlist = append(hostlist[:i], hostlist[i+1:]...)
+				isHostValid[delreq] = false
+				hostlist = getList(isHostValid)
 			} else {
 				// Stop and refresh
-				hostlist = refreshHostlist(handler)
+				hostlist = refreshHostlist(handler, isHostValid)
 			}
 		case <-ticker.C:
-			// While updating, we don't stop the world.
-			go func() { freshChan <- refreshHostlist(handler) }()
+			// Regular updating, we don't stop the world.
+			go func() { freshChan <- refreshHostlist(handler, isHostValid) }()
 		case newlist := <-freshChan:
-			// Update
+			// Regular update
 			hostlist = newlist
 		}
 	}
 }
 
-func refreshHostlist(handler *SogouProxyHandler) []int {
-	log.Println("Updating available proxy host list...")
-	log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
-	hostlist := make([]int, 0, handler.hostMax)
-	hostchan := make(chan int)
-	for i := 0; i < handler.hostMax; i++ {
-		go func(ihost int) {
-			proxyHost := fmt.Sprintf(handler.hostTemplate, ihost)
-			conn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
-			if err != nil {
-				log.Printf("Host %d unavailable: %s\n", ihost, err)
-				hostchan <- -1
-			} else {
-				log.Printf("Host %d OK (%s).\n", ihost, conn.RemoteAddr())
-				conn.Close()
-				hostchan <- ihost
-			}
-		}(i)
-	}
-	for i := 0; i < handler.hostMax; i++ {
-		if ihost := <-hostchan; ihost >= 0 {
-			hostlist = append(hostlist, ihost)
+func refreshHostlist(handler *SogouProxyHandler, isHostValid []bool) []int {
+	type signal struct{}
+	for {
+		log.Println("Updating available proxy host list...")
+		log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
+		finishchan := make(chan signal)
+		for i := 0; i < handler.hostMax; i++ {
+			go func(ihost int) {
+				proxyHost := fmt.Sprintf(handler.hostTemplate, ihost)
+				conn, err := net.DialTimeout("tcp", proxyHost, handler.timeOut)
+				if err != nil {
+					log.Printf("Host %d unavailable: %s\n", ihost, err)
+					isHostValid[ihost] = false
+					finishchan <- signal{}
+				} else {
+					log.Printf("Host %d OK (%s).\n", ihost, conn.RemoteAddr())
+					conn.Close()
+					isHostValid[ihost] = true
+					finishchan <- signal{}
+				}
+			}(i)
+		}
+		for i := 0; i < handler.hostMax; i++ {
+			<-finishchan
+		}
+		hostlist := getList(isHostValid)
+		// Not even one proxy host avaiable
+		if len(hostlist) > 0 {
+			log.Println("Available proxy host list is updated.")
+			return hostlist
+		} else {
+			log.Printf("All hosts are unavailable. Try again after %s.", waitDuration)
+			time.Sleep(waitDuration)
 		}
 	}
-	// Not even one proxy host avaiable
-	if len(hostlist) > 0 {
-		log.Println("Available proxy host list is updated.")
-	} else {
-		log.Fatalln("All hosts are unavailable.")
+}
+
+func getList(isValid []bool) []int {
+	list := make([]int, 0, len(isValid))
+	for i := 0; i < len(isValid); i++ {
+		if isValid[i] {
+			list = append(list, i)
+		}
 	}
-	return hostlist
+	return list
 }
 
 func copyAndClose(w io.WriteCloser, r io.Reader) {
