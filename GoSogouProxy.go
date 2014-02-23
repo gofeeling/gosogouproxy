@@ -29,11 +29,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -47,6 +49,8 @@ const (
 )
 
 func main() {
+	var quiet bool
+	flag.BoolVar(&quiet, "q", false, "Quiet mode. (Disable console output)")
 	var logEnabled bool
 	flag.BoolVar(&logEnabled, "l", false, "Enable log file.")
 	var serverPort uint
@@ -56,7 +60,7 @@ func main() {
 
 	flag.Parse()
 
-	setLog(logEnabled)
+	setLog(quiet, logEnabled)
 
 	if _, ok := proxyTypeMap[proxyTypeStr]; !ok {
 		fmt.Fprintf(os.Stderr, "Unknown proxy type '%s'.\n", proxyTypeStr)
@@ -78,14 +82,23 @@ func main() {
 	http.ListenAndServe(serverAddr, handler)
 }
 
-func setLog(logEnabled bool) {
-	if !logEnabled {
-		return
+func setLog(quiet, logEnabled bool) {
+	var (
+		console   io.Writer = os.Stderr
+		logwriter io.Writer = ioutil.Discard
+	)
+	if quiet {
+		console = ioutil.Discard
 	}
-	logfile, err := os.Create("gosogouproxy.log")
-	if err == nil {
-		log.SetOutput(io.MultiWriter(logfile, os.Stderr))
+	if logEnabled {
+		logfile, err := os.Create("gosogouproxy.log")
+		if err != nil {
+			log.Println("Cannot create log file: %s", err.Error())
+		} else {
+			logwriter = logfile
+		}
 	}
+	log.SetOutput(io.MultiWriter(logwriter, console))
 }
 
 type ProxyType struct {
@@ -210,7 +223,8 @@ func refreshHostlist(handler *SogouProxyHandler, isHostValid []bool) []int {
 	for {
 		log.Println("Updating available proxy host list...")
 		log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
-		finishchan := make(chan signal)
+		var waiter sync.WaitGroup
+		waiter.Add(handler.hostMax)
 		for i := 0; i < handler.hostMax; i++ {
 			go func(ihost int) {
 				proxyHost := fmt.Sprintf(handler.hostTemplate, ihost)
@@ -218,18 +232,15 @@ func refreshHostlist(handler *SogouProxyHandler, isHostValid []bool) []int {
 				if err != nil {
 					log.Printf("Host %d unavailable: %s\n", ihost, err)
 					isHostValid[ihost] = false
-					finishchan <- signal{}
 				} else {
 					log.Printf("Host %d OK (%s).\n", ihost, conn.RemoteAddr())
 					conn.Close()
 					isHostValid[ihost] = true
-					finishchan <- signal{}
 				}
+				waiter.Done()
 			}(i)
 		}
-		for i := 0; i < handler.hostMax; i++ {
-			<-finishchan
-		}
+		waiter.Wait()
 		hostlist := getList(isHostValid)
 		// Not even one proxy host avaiable
 		if len(hostlist) > 0 {
