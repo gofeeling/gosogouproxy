@@ -79,7 +79,10 @@ func main() {
 	go hostlistDaemon(handler)
 	serverAddr := fmt.Sprintf("127.0.0.1:%d", serverPort)
 	log.Printf("Start serving on %s\n", serverAddr)
-	http.ListenAndServe(serverAddr, handler)
+	err := http.ListenAndServe(serverAddr, handler)
+	if err != nil {
+		log.Fatalf("Cannot serve on %s: %s", serverAddr, err)
+	}
 }
 
 func setLog(quiet, logEnabled bool) {
@@ -93,7 +96,7 @@ func setLog(quiet, logEnabled bool) {
 	if logEnabled {
 		logfile, err := os.Create("gosogouproxy.log")
 		if err != nil {
-			log.Println("Cannot create log file: %s", err.Error())
+			log.Println("Cannot create log file: %s", err)
 		} else {
 			logwriter = logfile
 		}
@@ -139,7 +142,7 @@ func (handler *SogouProxyHandler) ServeHTTP(writer http.ResponseWriter, request 
 	}
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
-		log.Println("ERROR: ", err.Error(), http.StatusInternalServerError)
+		log.Println("ERROR: ", err, http.StatusInternalServerError)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -179,7 +182,7 @@ func mustDialSogou(handler *SogouProxyHandler) net.Conn {
 			log.Printf("Dial to h%d: ok\n", proxyNum)
 			return proxyConn
 		} else {
-			log.Printf("Dial to h%d: failed. %s\n", proxyNum, err.Error())
+			log.Printf("Dial to h%d: failed. %s\n", proxyNum, err)
 			handler.disableReqestChan <- proxyNum
 		}
 	}
