@@ -56,7 +56,7 @@ func main() {
 	var serverPort uint
 	flag.UintVar(&serverPort, "p", 8008, "Set server port.")
 	var proxyTypeStr string
-	flag.StringVar(&proxyTypeStr, "t", "edu", "Select type of proxy: edu, dxt, cnc, ctc")
+	flag.StringVar(&proxyTypeStr, "t", "edu", "Select type of proxy: edu, dxt, cnc, ctc, tc9")
 
 	flag.Parse()
 
@@ -114,6 +114,7 @@ var proxyTypeMap = map[string]ProxyType{
 	"dxt": {hostTemplate: "h%d.dxt.bj.ie.sogou.com:80", hostMax: 16},
 	"cnc": {hostTemplate: "h%d.cnc.bj.ie.sogou.com:80", hostMax: 4},
 	"ctc": {hostTemplate: "h%d.ctc.bj.ie.sogou.com:80", hostMax: 4},
+	"tc9": {hostTemplate: "h%d.tc9.bj.ie.sogou.com:80", hostMax: 16},
 }
 
 type SogouProxyHandler struct {
