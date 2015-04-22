@@ -1,6 +1,6 @@
 // encoding: utf-8
 /*
- * Copyright (C) 2014 Liú Hǎiyáng
+ * Copyright (C) 2014--2015 Liú Hǎiyáng
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -67,7 +67,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Printf("GoSogouProxy (rev. %s), Copyright (C) 2014 Liu Haiyang\n", Revision)
+	log.Printf("GoSogouProxy (rev. %s), Copyright (C) 2014--2015 Liu Haiyang\n", Revision)
 	log.Println("This software is released under The MIT License.")
 
 	handler := &SogouProxyHandler{
