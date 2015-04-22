@@ -225,7 +225,7 @@ func refreshHostlist(handler *SogouProxyHandler, isHostValid []bool) []int {
 	type signal struct{}
 	for {
 		log.Println("Updating available proxy host list...")
-		log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax))
+		log.Printf("%s -- %s\n", fmt.Sprintf(handler.hostTemplate, 0), fmt.Sprintf(handler.hostTemplate, handler.hostMax-1))
 		var waiter sync.WaitGroup
 		waiter.Add(handler.hostMax)
 		for i := 0; i < handler.hostMax; i++ {
