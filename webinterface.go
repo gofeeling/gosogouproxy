@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 )
 
 type WebHandler struct {
@@ -18,6 +20,7 @@ func NewWebHandler(proxyType ProxyType) *WebHandler {
 		getlistReqChan: make(chan chan []int),
 	}
 	handler.HandleFunc("/", handler.serveMainPage)
+	handler.HandleFunc("/api/close/", handler.serveAPI_close)
 	return handler
 }
 
@@ -32,6 +35,11 @@ func (handler *WebHandler) serveMainPage(w http.ResponseWriter, r *http.Request)
 	for _, server := range serverList {
 		fmt.Fprintln(w, server)
 	}
+}
+
+func (handler *WebHandler) serveAPI_close(w http.ResponseWriter, r *http.Request) {
+	log.Println("GoSogouProxy is closing.")
+	os.Exit(0)
 }
 
 func (handler *WebHandler) getServerList() []string {
