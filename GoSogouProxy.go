@@ -70,16 +70,25 @@ func main() {
 	log.Printf("GoSogouProxy (rev. %s), Copyright (C) 2014--2015 Liu Haiyang\n", Revision)
 	log.Println("This software is released under The MIT License.")
 
-	handler := &SogouProxyHandler{
+	proxyHandler := &SogouProxyHandler{
 		ProxyType:         proxyTypeMap[proxyTypeStr],
 		timeOut:           defalutTimeOut,
 		getRequestChan:    make(chan chan int),
 		disableReqestChan: make(chan int),
 	}
-	go hostlistDaemon(handler)
+	go hostlistDaemon(proxyHandler)
+	webHandler := NewWebHandler()
+
 	serverAddr := fmt.Sprintf("127.0.0.1:%d", serverPort)
+	dispatcher := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == serverAddr {
+			webHandler.ServeHTTP(w, r)
+		} else {
+			proxyHandler.ServeHTTP(w, r)
+		}
+	})
 	log.Printf("Start serving on %s\n", serverAddr)
-	err := http.ListenAndServe(serverAddr, handler)
+	err := http.ListenAndServe(serverAddr, dispatcher)
 	if err != nil {
 		log.Fatalf("Cannot serve on %s: %s", serverAddr, err)
 	}
