@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ func NewWebHandler(proxyType ProxyType) *WebHandler {
 	}
 	handler.HandleFunc("/", handler.serveMainPage)
 	handler.HandleFunc("/api/close/", handler.serveAPI_close)
+	handler.HandleFunc("/pac/", handler.servePac)
 	return handler
 }
 
@@ -40,6 +42,16 @@ func (handler *WebHandler) serveMainPage(w http.ResponseWriter, r *http.Request)
 func (handler *WebHandler) serveAPI_close(w http.ResponseWriter, r *http.Request) {
 	log.Println("GoSogouProxy is closing.")
 	os.Exit(0)
+}
+
+func (handler *WebHandler) servePac(w http.ResponseWriter, r *http.Request) {
+	pac, err := os.Open("sogouproxy.pac")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	io.Copy(w, pac)
+	pac.Close()
 }
 
 func (handler *WebHandler) getServerList() []string {
