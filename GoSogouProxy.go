@@ -21,6 +21,8 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+//go:generate go-bindata web
+
 // Sogou Proxy
 package main
 

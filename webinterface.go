@@ -27,7 +27,7 @@ func NewWebHandler(proxyType ProxyType) *WebHandler {
 	handler.HandleFunc("/api/close/", handler.serveAPI_close)
 	handler.HandleFunc("/api/server/", handler.serveAPI_server)
 	handler.Handle("/pac/",
-		NewFileHandlerX("sogouproxy.pac", "application/x-ns-proxy-autoconfig"))
+		NewFileHandlerX("web/sogouproxy.pac", "application/x-ns-proxy-autoconfig"))
 	return handler
 }
 
@@ -36,7 +36,7 @@ func (handler *WebHandler) serveMainPage(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	NewFileHandler("index.html").ServeHTTP(w, r)
+	NewFileHandler("web/index.html").ServeHTTP(w, r)
 }
 
 func (handler *WebHandler) serveAPI_close(w http.ResponseWriter, r *http.Request) {
@@ -85,9 +85,11 @@ func NewFileHandlerX(name string, contentType string) *FileHandler {
 func (handler *FileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	filedata, err := ioutil.ReadFile(handler.name)
 	if err != nil {
-		log.Printf("File %s not found.", handler.name)
-		http.NotFound(w, r)
-		return
+		if filedata, err = Asset(handler.name); err != nil {
+			log.Printf("File %s not found.", handler.name)
+			http.NotFound(w, r)
+			return
+		}
 	}
 	log.Printf("Serve file %s", handler.name)
 	w.Header().Set("Content-Type", handler.contentType)
