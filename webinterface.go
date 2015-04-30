@@ -1,8 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -22,7 +23,8 @@ func NewWebHandler(proxyType ProxyType) *WebHandler {
 	}
 	handler.HandleFunc("/", handler.serveMainPage)
 	handler.HandleFunc("/api/close/", handler.serveAPI_close)
-	handler.HandleFunc("/pac/", handler.servePac)
+	handler.HandleFunc("/api/server/", handler.serveAPI_server)
+	handler.Handle("/pac/", fileHandler("sogouproxy.pac"))
 	return handler
 }
 
@@ -31,12 +33,7 @@ func (handler *WebHandler) serveMainPage(w http.ResponseWriter, r *http.Request)
 		http.NotFound(w, r)
 		return
 	}
-	fmt.Fprintln(w, "GoSogouProxy")
-	serverList := handler.getServerList()
-	fmt.Fprintf(w, "%d servers available:\n", len(serverList))
-	for _, server := range serverList {
-		fmt.Fprintln(w, server)
-	}
+	fileHandler("index.html").ServeHTTP(w, r)
 }
 
 func (handler *WebHandler) serveAPI_close(w http.ResponseWriter, r *http.Request) {
@@ -44,14 +41,11 @@ func (handler *WebHandler) serveAPI_close(w http.ResponseWriter, r *http.Request
 	os.Exit(0)
 }
 
-func (handler *WebHandler) servePac(w http.ResponseWriter, r *http.Request) {
-	pac, err := os.Open("sogouproxy.pac")
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	io.Copy(w, pac)
-	pac.Close()
+func (handler *WebHandler) serveAPI_server(w http.ResponseWriter, r *http.Request) {
+	log.Println("Send server list.")
+	serverList := handler.getServerList()
+	response, _ := json.Marshal(serverList)
+	w.Write(response)
 }
 
 func (handler *WebHandler) getServerList() []string {
@@ -63,4 +57,17 @@ func (handler *WebHandler) getServerList() []string {
 		serverList = append(serverList, fmt.Sprintf(handler.hostTemplate, proxyNum))
 	}
 	return serverList
+}
+
+type fileHandler string
+
+func (f fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	filename := string(f)
+	log.Printf("Serve file %s", filename)
+	filedata, err := ioutil.ReadFile(filename)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Write(filedata)
 }

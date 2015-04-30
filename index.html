@@ -1,0 +1,26 @@
+<html>
+<body>
+
+    <script language=javascript>
+    function clock() {
+        var req = new XMLHttpRequest();
+        req.open("GET", "/api/server/", true);
+        req.send();
+        req.onreadystatechange = function() {
+            serverList = eval(req.responseText);
+            p = document.getElementById("servers");
+            p.innerHTML = serverList.length;
+            var server;
+            for (i in serverList) {
+                p.innerHTML += "<li>" + i + ": " + serverList[i] + "</li>\n";
+            }
+        }
+    }
+    clock();
+    var int = self.setInterval("clock()", 5000);
+    </script>
+
+    <p>GoSogouproxy</p>
+    <ul id="servers"></ul>
+</body>
+</html>
