@@ -1,0 +1,7 @@
+#!/bin/sh
+
+Revision=`git log -1 --pretty=format:'%h %ai' | cut -d' ' -f1,2`
+echo Building rev $Revision...
+go generate
+go install -ldflags '-s -w -X main.Revision $Revision'
+echo Done.
