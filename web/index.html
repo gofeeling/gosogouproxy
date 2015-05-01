@@ -14,7 +14,7 @@
             }
             var p = document.getElementById("status");
             var serverList = JSON.parse(req.responseText);
-            if (serverList.length > 0) {
+            if (serverList && serverList.length > 0) {
                 p.innerHTML = "<p>现在有 " + serverList.length + " 个代理服务器正在工作。<ul>";
                 for (var i in serverList) {
                     p.innerHTML += "<li>" + serverList[i] + "</li>\n";
