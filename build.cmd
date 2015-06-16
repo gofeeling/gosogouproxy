@@ -7,6 +7,6 @@ echo Building rev %Revision%...
 cd %~p0
 go generate
 go install -ldflags "-s -w -X main.Revision """%Revision%""""
-rem go build -o GoSogouProxy-no-console.exe -ldflags "-H windowsgui -s -w -X main.Revision """%Revision%""""
+go build -o GoSogouProxy-no-console.exe -ldflags "-H windowsgui -s -w -X main.Revision """%Revision%""""
 echo Done.
 endlocal
