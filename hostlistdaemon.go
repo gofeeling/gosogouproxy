@@ -65,7 +65,7 @@ func refreshHostlist(proxy *SogouProxyHandler, web *WebHandler, isHostValid []bo
 			log.Println("All hosts are unavailable. Try again...")
 		}
 		select {
-		case getlistReq, ok := <-web.getlistReqChan:
+		case getlistReq, ok := <-getlistReqChan:
 			if ok {
 				getlistReq <- nil
 			}
